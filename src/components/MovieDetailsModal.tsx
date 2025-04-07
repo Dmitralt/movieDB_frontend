@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import "../styles/MovieDetailsModal.css";
 
 interface MovieDetailsProps {
@@ -35,6 +35,12 @@ const MovieDetailsModal: React.FC<MovieDetailsProps> = ({ movieId, onClose }) =>
     const [selectedVideo, setSelectedVideo] = useState(0);
     const [showFullImage, setShowFullImage] = useState<string | null>(null);
     const [isVideoLoading, setIsVideoLoading] = useState(false);
+    const [isVideoPlaying, setIsVideoPlaying] = useState(false);
+    const [currentTime, setCurrentTime] = useState(0);
+    const [duration, setDuration] = useState(0);
+    const [volume, setVolume] = useState(1);
+    const [isMuted, setIsMuted] = useState(false);
+    const videoRef = useRef<HTMLVideoElement>(null);
 
     useEffect(() => {
         if (cache[movieId]) {
@@ -50,6 +56,54 @@ const MovieDetailsModal: React.FC<MovieDetailsProps> = ({ movieId, onClose }) =>
             })
             .catch((err) => console.error(err));
     }, [movieId]);
+
+    const handlePlayPause = () => {
+        if (videoRef.current) {
+            if (isVideoPlaying) {
+                videoRef.current.pause();
+            } else {
+                videoRef.current.play();
+            }
+            setIsVideoPlaying(!isVideoPlaying);
+        }
+    };
+
+    const handleTimeUpdate = () => {
+        if (videoRef.current) {
+            setCurrentTime(videoRef.current.currentTime);
+        }
+    };
+
+    const handleLoadedMetadata = () => {
+        if (videoRef.current) {
+            setDuration(videoRef.current.duration);
+            videoRef.current.volume = volume;
+            videoRef.current.muted = isMuted;
+        }
+    };
+
+    const handleProgressClick = (e: React.MouseEvent<HTMLDivElement>) => {
+        if (videoRef.current) {
+            const rect = e.currentTarget.getBoundingClientRect();
+            const pos = (e.clientX - rect.left) / rect.width;
+            videoRef.current.currentTime = pos * duration;
+        }
+    };
+
+    const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const newVolume = parseFloat(e.target.value);
+        setVolume(newVolume);
+        if (videoRef.current) {
+            videoRef.current.volume = newVolume;
+        }
+    };
+
+    const handleMuteToggle = () => {
+        if (videoRef.current) {
+            videoRef.current.muted = !isMuted;
+            setIsMuted(!isMuted);
+        }
+    };
 
     if (!movie) return null;
 
@@ -146,18 +200,52 @@ const MovieDetailsModal: React.FC<MovieDetailsProps> = ({ movieId, onClose }) =>
                                         Загрузка видео...
                                     </div>
                                 )}
-                                <video
-                                    key={selectedVideo}
-                                    className="movie-video"
-                                    controls
-                                    poster={movie.images?.posters?.[0] || "/images/placeholder.jpg"}
-                                    onLoadStart={() => setIsVideoLoading(true)}
-                                    onCanPlay={() => setIsVideoLoading(false)}
-                                    onError={() => setIsVideoLoading(false)}
-                                >
-                                    <source src={movie.videos[selectedVideo]} type="video/mp4" />
-                                    Ваш браузер не поддерживает видео.
-                                </video>
+                                <div className="video-wrapper">
+                                    <video
+                                        ref={videoRef}
+                                        key={selectedVideo}
+                                        className="movie-video"
+                                        poster={movie.images?.posters?.[0] || "/images/placeholder.jpg"}
+                                        onLoadStart={() => setIsVideoLoading(true)}
+                                        onCanPlay={() => setIsVideoLoading(false)}
+                                        onError={() => setIsVideoLoading(false)}
+                                        onTimeUpdate={handleTimeUpdate}
+                                        onLoadedMetadata={handleLoadedMetadata}
+                                        data-testid="video-player"
+                                    >
+                                        <source src={movie.videos[selectedVideo]} type="video/mp4" />
+                                        Ваш браузер не поддерживает видео.
+                                    </video>
+                                    <div className="video-controls">
+                                        <button className="play-pause-button" onClick={handlePlayPause}>
+                                            {isVideoPlaying ? '⏸' : '▶'}
+                                        </button>
+                                        <div className="progress-container" onClick={handleProgressClick}>
+                                            <div
+                                                className="progress-bar"
+                                                style={{ width: `${(currentTime / duration) * 100}%` }}
+                                            />
+                                        </div>
+                                        <div className="time-display">
+                                            {Math.floor(currentTime / 60)}:{(Math.floor(currentTime % 60)).toString().padStart(2, '0')} /
+                                            {Math.floor(duration / 60)}:{(Math.floor(duration % 60)).toString().padStart(2, '0')}
+                                        </div>
+                                        <div className="volume-controls">
+                                            <button className="mute-button" onClick={handleMuteToggle}>
+                                                {isMuted ? '🔇' : '🔊'}
+                                            </button>
+                                            <input
+                                                type="range"
+                                                min="0"
+                                                max="1"
+                                                step="0.1"
+                                                value={volume}
+                                                onChange={handleVolumeChange}
+                                                className="volume-slider"
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
                                 {movie.videos.length > 1 && (
                                     <div className="video-list">
                                         {movie.videos.map((_, index) => (
@@ -167,6 +255,15 @@ const MovieDetailsModal: React.FC<MovieDetailsProps> = ({ movieId, onClose }) =>
                                                 onClick={() => {
                                                     setIsVideoLoading(true);
                                                     setSelectedVideo(index);
+                                                    setIsVideoPlaying(false);
+
+                                                    // Просто ждем немного и воспроизводим
+                                                    setTimeout(() => {
+                                                        if (videoRef.current) {
+                                                            videoRef.current.play();
+                                                            setIsVideoPlaying(true);
+                                                        }
+                                                    }, 100);
                                                 }}
                                             >
                                                 Видео {index + 1}
