@@ -7,13 +7,24 @@ interface MovieProps {
     country: string;
     directors: string[];
     actors: string[];
+    images: {
+        stills: string[];
+        posters: string[];
+    };
     onClick: () => void;
 }
 
-const MovieCard: React.FC<MovieProps> = ({ title, year, country, directors, actors, onClick }) => {
+const MovieCard: React.FC<MovieProps> = ({ title, year, country, directors, actors, images, onClick }) => {
+    const posterUrl = images?.posters?.[0] || ""; // безопасно достаём первую ссылку
+
     return (
-        <div className="movie-card" onClick={onClick}> { }
-            <img src="/images/placeholder.jpg" alt={title} />
+        <div className="movie-card" onClick={onClick}>
+            {/* <img src="/images/placeholder.jpg" alt={title} /> */}
+            {posterUrl ? (
+                <img src={posterUrl} alt={title} />
+            ) : (
+                <img src="/images/placeholder.jpg" alt={title} />
+            )}
             <h3>{title}</h3>
             <p><strong>Рік:</strong> {year}</p>
             <p><strong>Країна:</strong> {country}</p>
@@ -21,11 +32,6 @@ const MovieCard: React.FC<MovieProps> = ({ title, year, country, directors, acto
             <p><strong>Актори:</strong> {actors.slice(0, 5).join(", ")}</p>
         </div>
     );
-
 };
 
 export default MovieCard;
-
-
-
-

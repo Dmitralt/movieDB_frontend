@@ -10,6 +10,11 @@ interface Movie {
     country: string;
     directors: string[];
     actors: string[];
+    images: {
+        stills: string[];
+        posters: string[];
+    }
+
 }
 
 const Home: React.FC = () => {
@@ -48,6 +53,7 @@ const Home: React.FC = () => {
             .catch((err) => console.error(err));
     }, [page, limit, debouncedQuery]);
 
+    console.log(movies)
     return (
         <div className="home-container">
             <input
@@ -67,8 +73,10 @@ const Home: React.FC = () => {
                         country={movie.country}
                         directors={movie.directors || []}
                         actors={movie.actors || []}
+                        images={movie.images}
                         onClick={() => setSelectedMovieId(movie._id)}
                     />
+
                 ))}
             </div>
 
