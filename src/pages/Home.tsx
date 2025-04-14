@@ -83,7 +83,7 @@ const Home: React.FC = () => {
             <div className="pagination">
                 <button disabled={page === 1} onClick={() => setPage(1)}>«</button>
                 <button disabled={page === 1} onClick={() => setPage(page - 1)}>‹</button>
-                <span>Страница {page} из {totalPages}</span>
+                <span>Сторінка {page} з {totalPages}</span>
                 <button disabled={page === totalPages} onClick={() => setPage(page + 1)}>›</button>
                 <button disabled={page === totalPages} onClick={() => setPage(totalPages)}>»</button>
                 <select value={limit} onChange={(e) => setLimit(Number(e.target.value))}>

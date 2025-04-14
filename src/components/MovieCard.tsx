@@ -15,7 +15,7 @@ interface MovieProps {
 }
 
 const MovieCard: React.FC<MovieProps> = ({ title, year, country, directors, actors, images, onClick }) => {
-    const posterUrl = images?.posters?.[0] || ""; // безопасно достаём первую ссылку
+    const posterUrl = images?.posters?.[0] || "";
 
     return (
         <div className="movie-card" onClick={onClick}>

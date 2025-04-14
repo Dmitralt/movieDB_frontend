@@ -40,7 +40,14 @@ const MovieDetailsModal: React.FC<MovieDetailsProps> = ({ movieId, onClose }) =>
     const [duration, setDuration] = useState(0);
     const [volume, setVolume] = useState(1);
     const [isMuted, setIsMuted] = useState(false);
+    const [isBuffering, setIsBuffering] = useState(false);
+    const [videoError, setVideoError] = useState<string | null>(null);
+    const [currentVideoUrl, setCurrentVideoUrl] = useState<string | null>(null);
     const videoRef = useRef<HTMLVideoElement>(null);
+    const isSwitchingRef = useRef(false);
+    const playPromiseRef = useRef<Promise<void> | null>(null);
+    const rateLimitRef = useRef(false);
+    const videoKeyRef = useRef<number>(0);
 
     useEffect(() => {
         if (cache[movieId]) {
@@ -48,7 +55,11 @@ const MovieDetailsModal: React.FC<MovieDetailsProps> = ({ movieId, onClose }) =>
             return;
         }
 
-        fetch(`${process.env.REACT_APP_API_URL}/movies/${movieId}`)
+        const apiUrl = process.env.NODE_ENV === 'development'
+            ? process.env.REACT_APP_API_URL_LOCAL
+            : process.env.REACT_APP_API_URL;
+
+        fetch(`${apiUrl}/movies/${movieId}`)
             .then((res) => res.json())
             .then((data) => {
                 setMovie(data);
@@ -57,14 +68,122 @@ const MovieDetailsModal: React.FC<MovieDetailsProps> = ({ movieId, onClose }) =>
             .catch((err) => console.error(err));
     }, [movieId]);
 
-    const handlePlayPause = () => {
-        if (videoRef.current) {
-            if (isVideoPlaying) {
+    useEffect(() => {
+        if (movie?.videos) {
+            setCurrentVideoUrl(movie.videos[selectedVideo]);
+        }
+    }, [movie, selectedVideo]);
+
+    useEffect(() => {
+        return () => {
+            if (videoRef.current) {
                 videoRef.current.pause();
-            } else {
-                videoRef.current.play();
+                videoRef.current.src = '';
+                videoRef.current.load();
             }
-            setIsVideoPlaying(!isVideoPlaying);
+            playPromiseRef.current = null;
+            rateLimitRef.current = false;
+        };
+    }, []);
+
+    const handleVideoLoad = () => {
+        if (isSwitchingRef.current) return;
+        setIsVideoLoading(false);
+        setVideoError(null);
+        if (videoRef.current) {
+            setDuration(videoRef.current.duration);
+            videoRef.current.volume = volume;
+            videoRef.current.muted = isMuted;
+        }
+    };
+
+    const handleVideoError = (e: React.SyntheticEvent<HTMLVideoElement, Event>) => {
+        if (isSwitchingRef.current) return;
+        setIsVideoLoading(false);
+        setIsVideoPlaying(false);
+        setIsBuffering(false);
+        const video = e.target as HTMLVideoElement;
+        const error = video.error;
+
+        if (video.networkState === 3) {
+            const xhr = video.error?.message.includes('429');
+            if (xhr) {
+                rateLimitRef.current = true;
+                setVideoError('Забагато запитів. Будь ласка, зачекайте кілька секунд перед наступною спробою.');
+                if (videoRef.current) {
+                    videoRef.current.pause();
+                    videoRef.current.src = '';
+                    videoRef.current.load();
+                }
+                return;
+            }
+        }
+
+        const errorMessage = error ? `Error ${error.code}: ${error.message}` : 'Unknown video error';
+        setVideoError(errorMessage);
+        console.error('Error loading video:', errorMessage);
+    };
+
+    const switchVideo = async (index: number) => {
+        if (!movie?.videos || index === selectedVideo || isSwitchingRef.current || rateLimitRef.current) return;
+
+        const newVideoUrl = movie.videos[index];
+        if (newVideoUrl === currentVideoUrl) return;
+
+        isSwitchingRef.current = true;
+        setIsVideoLoading(true);
+        setIsBuffering(true);
+        setVideoError(null);
+        setSelectedVideo(index);
+        setIsVideoPlaying(false);
+        setCurrentTime(0);
+        setDuration(0);
+
+        if (playPromiseRef.current) {
+            try {
+                await playPromiseRef.current;
+            } catch (error) {
+            }
+        }
+
+        setCurrentVideoUrl(newVideoUrl);
+        isSwitchingRef.current = false;
+    };
+
+    const handlePlayPause = async () => {
+        if (!videoRef.current || isSwitchingRef.current || !currentVideoUrl || rateLimitRef.current) return;
+
+        try {
+            if (isVideoPlaying) {
+                if (playPromiseRef.current) {
+                    try {
+                        await playPromiseRef.current;
+                    } catch (error) {
+                        //:TODO
+                    }
+                }
+                videoRef.current.pause();
+                setIsVideoPlaying(false);
+                playPromiseRef.current = null;
+            } else {
+                setIsVideoPlaying(true);
+                playPromiseRef.current = videoRef.current.play();
+
+                if (playPromiseRef.current !== undefined) {
+                    await playPromiseRef.current;
+                    if (!isSwitchingRef.current) {
+                        setIsBuffering(false);
+                    }
+                }
+            }
+        } catch (error) {
+            if (!isSwitchingRef.current) {
+                console.error('Error in play/pause:', error);
+                setIsVideoPlaying(false);
+                setIsBuffering(false);
+                setVideoError('Error playing video');
+                playPromiseRef.current = null;
+            }
         }
     };
 
@@ -79,6 +198,31 @@ const MovieDetailsModal: React.FC<MovieDetailsProps> = ({ movieId, onClose }) =>
             setDuration(videoRef.current.duration);
             videoRef.current.volume = volume;
             videoRef.current.muted = isMuted;
+        }
+    };
+
+    const handleWaiting = () => {
+        if (!isSwitchingRef.current) {
+            setIsBuffering(true);
+        }
+    };
+
+    const handlePlaying = () => {
+        if (!isSwitchingRef.current) {
+            setIsBuffering(false);
+            setVideoError(null);
+        }
+    };
+
+    const handleProgress = () => {
+        if (videoRef.current && !isSwitchingRef.current) {
+            const buffered = videoRef.current.buffered;
+            if (buffered.length > 0) {
+                const bufferedEnd = buffered.end(buffered.length - 1);
+                const duration = videoRef.current.duration;
+                const bufferedPercent = (bufferedEnd / duration) * 100;
+                console.log(`Buffered: ${bufferedPercent.toFixed(2)}%`);
+            }
         }
     };
 
@@ -155,8 +299,8 @@ const MovieDetailsModal: React.FC<MovieDetailsProps> = ({ movieId, onClose }) =>
                                     onClick={() => setShowAllImages(!showAllImages)}
                                 >
                                     {showAllImages
-                                        ? `Свернуть (${movie.images?.stills?.length} фото)`
-                                        : `Показать все (${movie.images?.stills?.length} фото)`}
+                                        ? `Згорнути (${movie.images?.stills?.length} фото)`
+                                        : `Показати всі (${movie.images?.stills?.length} фото)`}
                                 </button>
                             )}
                         </>
@@ -167,7 +311,7 @@ const MovieDetailsModal: React.FC<MovieDetailsProps> = ({ movieId, onClose }) =>
 
                 {movie.links && movie.links.length > 0 && (
                     <div className="links-section">
-                        <h3>Ссылки</h3>
+                        <h3>Посилання</h3>
                         <div className="links-container">
                             {movie.links.map((link, index) => (
                                 <a
@@ -190,32 +334,40 @@ const MovieDetailsModal: React.FC<MovieDetailsProps> = ({ movieId, onClose }) =>
                             className="video-toggle-button"
                             onClick={() => setShowVideoPlayer(!showVideoPlayer)}
                         >
-                            {showVideoPlayer ? 'Скрыть видео' : 'Показать видео'}
+                            {showVideoPlayer ? 'Сховати відео' : 'показати відео'}
                         </button>
 
                         {showVideoPlayer && (
                             <div className="video-player-container">
                                 {isVideoLoading && (
                                     <div className="video-loading">
-                                        Загрузка видео...
+                                        Завантаження відео...
                                     </div>
                                 )}
                                 <div className="video-wrapper">
                                     <video
                                         ref={videoRef}
-                                        key={selectedVideo}
+                                        key={currentVideoUrl}
                                         className="movie-video"
                                         poster={movie.images?.posters?.[0] || "/images/placeholder.jpg"}
                                         onLoadStart={() => setIsVideoLoading(true)}
-                                        onCanPlay={() => setIsVideoLoading(false)}
-                                        onError={() => setIsVideoLoading(false)}
+                                        onCanPlay={handleVideoLoad}
+                                        onError={handleVideoError}
                                         onTimeUpdate={handleTimeUpdate}
                                         onLoadedMetadata={handleLoadedMetadata}
+                                        onWaiting={handleWaiting}
+                                        onPlaying={handlePlaying}
+                                        onProgress={handleProgress}
                                         data-testid="video-player"
                                     >
-                                        <source src={movie.videos[selectedVideo]} type="video/mp4" />
-                                        Ваш браузер не поддерживает видео.
+                                        <source src={currentVideoUrl || ''} type="video/mp4" />
+                                        Ваш браузер не підтримує відео.
                                     </video>
+                                    {videoError && (
+                                        <div className="video-error">
+                                            {videoError}
+                                        </div>
+                                    )}
                                     <div className="video-controls">
                                         <button className="play-pause-button" onClick={handlePlayPause}>
                                             {isVideoPlaying ? '⏸' : '▶'}
@@ -252,21 +404,9 @@ const MovieDetailsModal: React.FC<MovieDetailsProps> = ({ movieId, onClose }) =>
                                             <button
                                                 key={index}
                                                 className={`video-list-item ${selectedVideo === index ? 'active' : ''}`}
-                                                onClick={() => {
-                                                    setIsVideoLoading(true);
-                                                    setSelectedVideo(index);
-                                                    setIsVideoPlaying(false);
-
-                                                    // Просто ждем немного и воспроизводим
-                                                    setTimeout(() => {
-                                                        if (videoRef.current) {
-                                                            videoRef.current.play();
-                                                            setIsVideoPlaying(true);
-                                                        }
-                                                    }, 100);
-                                                }}
+                                                onClick={() => switchVideo(index)}
                                             >
-                                                Видео {index + 1}
+                                                відео {index + 1}
                                             </button>
                                         ))}
                                     </div>

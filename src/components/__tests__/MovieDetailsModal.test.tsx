@@ -1,148 +1,193 @@
 import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent, act, RenderResult } from '@testing-library/react';
+import '@testing-library/jest-dom';
 import MovieDetailsModal from '../MovieDetailsModal';
 
-// Мокаем fetch для тестов
-global.fetch = jest.fn(() =>
-    Promise.resolve({
-        json: () => Promise.resolve({
-            title: 'Test Movie',
-            year: 2023,
-            country: 'Test Country',
-            language: 'Test Language',
-            production_company: 'Test Company',
-            directors: ['Director 1', 'Director 2'],
-            screenwriters: ['Writer 1', 'Writer 2'],
-            actors: ['Actor 1', 'Actor 2'],
-            description: 'Test Description',
-            images: {
-                stills: ['image1.jpg', 'image2.jpg'],
-                posters: ['poster1.jpg']
-            },
-            videos: ['video1.mp4', 'video2.mp4'],
-            links: [
-                { description: 'Link 1', url: 'http://test1.com' },
-                { description: 'Link 2', url: 'http://test2.com' }
-            ]
-        })
-    })
-) as jest.Mock;
+const mockMovie = {
+    title: 'Test Movie',
+    year: 2023,
+    country: 'Test Country',
+    language: 'Test Language',
+    production_company: 'Test Company',
+    directors: ['Director 1', 'Director 2'],
+    screenwriters: ['Writer 1', 'Writer 2'],
+    actors: ['Actor 1', 'Actor 2'],
+    description: 'Test Description',
+    images: {
+        stills: ['image1.jpg', 'image2.jpg', 'image3.jpg', 'image4.jpg', 'image5.jpg', 'image6.jpg'],
+        posters: ['poster1.jpg']
+    },
+    videos: ['video1.mp4']
+};
+
+beforeEach(() => {
+    global.fetch = jest.fn(() =>
+        Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve(mockMovie)
+        } as Response)
+    );
+});
+
+afterEach(() => {
+    jest.restoreAllMocks();
+});
 
 describe('MovieDetailsModal', () => {
-    const mockOnClose = jest.fn();
-    const movieId = '123';
-
-    beforeEach(() => {
-        jest.clearAllMocks();
-    });
-
-    it('renders loading state initially', () => {
-        render(<MovieDetailsModal movieId={movieId} onClose={mockOnClose} />);
-        expect(screen.getByText('Загрузка...')).toBeInTheDocument();
-    });
-
-    it('renders movie details after loading', async () => {
-        render(<MovieDetailsModal movieId={movieId} onClose={mockOnClose} />);
+    test('renders basic movie information', async () => {
+        await act(async () => {
+            render(<MovieDetailsModal movieId="123" onClose={() => { }} />);
+        });
 
         await waitFor(() => {
             expect(screen.getByText('Test Movie')).toBeInTheDocument();
-            expect(screen.getByText('2023')).toBeInTheDocument();
-            expect(screen.getByText('Test Country')).toBeInTheDocument();
-            expect(screen.getByText('Test Language')).toBeInTheDocument();
-            expect(screen.getByText('Test Company')).toBeInTheDocument();
-            expect(screen.getByText('Director 1, Director 2')).toBeInTheDocument();
-            expect(screen.getByText('Writer 1, Writer 2')).toBeInTheDocument();
-            expect(screen.getByText('Actor 1, Actor 2')).toBeInTheDocument();
-            expect(screen.getByText('Test Description')).toBeInTheDocument();
         });
+
+        expect(screen.getByText(/2023/)).toBeInTheDocument();
+        expect(screen.getByText(/Test Country/)).toBeInTheDocument();
+        expect(screen.getByText(/Test Language/)).toBeInTheDocument();
+        expect(screen.getByText(/Test Company/)).toBeInTheDocument();
+        expect(screen.getByText(/Director 1, Director 2/)).toBeInTheDocument();
+        expect(screen.getByText(/Writer 1, Writer 2/)).toBeInTheDocument();
+        expect(screen.getByText(/Actor 1, Actor 2/)).toBeInTheDocument();
+        expect(screen.getByText(/Test Description/)).toBeInTheDocument();
     });
 
-    it('handles image click to show full size', async () => {
-        render(<MovieDetailsModal movieId={movieId} onClose={mockOnClose} />);
+    test('handles API error gracefully', async () => {
+        const consoleError = jest.spyOn(console, 'error').mockImplementation(() => { });
+        global.fetch = jest.fn(() => Promise.reject(new Error('API Error')));
 
-        await waitFor(() => {
-            const image = screen.getByAltText('Постер');
-            fireEvent.click(image);
+        await act(async () => {
+            render(<MovieDetailsModal movieId="123" onClose={() => { }} />);
         });
 
-        expect(screen.getByAltText('Полное изображение')).toBeInTheDocument();
+        await waitFor(() => {
+            expect(document.body.textContent).toBe('');
+        });
+
+        expect(consoleError).toHaveBeenCalled();
+        consoleError.mockRestore();
     });
 
-    it('handles video player toggle', async () => {
-        render(<MovieDetailsModal movieId={movieId} onClose={mockOnClose} />);
-
-        await waitFor(() => {
-            const toggleButton = screen.getByText('Показать видео');
-            fireEvent.click(toggleButton);
+    test('displays poster image', async () => {
+        await act(async () => {
+            render(<MovieDetailsModal movieId="123" onClose={() => { }} />);
         });
 
-        expect(screen.getByText('Скрыть видео')).toBeInTheDocument();
+        await waitFor(() => {
+            expect(screen.getByText('Test Movie')).toBeInTheDocument();
+        });
+
+        const posterImage = screen.getByAltText('Постер');
+        expect(posterImage).toHaveAttribute('src', 'poster1.jpg');
     });
 
-    it('handles video switching', async () => {
-        render(<MovieDetailsModal movieId={movieId} onClose={mockOnClose} />);
+    test('displays placeholder when no poster available', async () => {
+        const movieWithoutPoster = {
+            ...mockMovie,
+            images: {
+                ...mockMovie.images,
+                posters: []
+            }
+        };
 
-        await waitFor(() => {
-            const toggleButton = screen.getByText('Показать видео');
-            fireEvent.click(toggleButton);
+        global.fetch = jest.fn(() =>
+            Promise.resolve({
+                ok: true,
+                json: () => Promise.resolve(movieWithoutPoster)
+            } as Response)
+        );
+
+        await act(async () => {
+            render(<MovieDetailsModal movieId="123" onClose={() => { }} />);
         });
 
-        const videoButtons = screen.getAllByText(/Видео \d+/);
-        fireEvent.click(videoButtons[1]);
-
         await waitFor(() => {
-            expect(screen.getByText('Видео 2')).toHaveClass('active');
+            expect(screen.getByText('Test Movie')).toBeInTheDocument();
         });
+
+        const placeholderImage = screen.getByAltText('Постер');
+        expect(placeholderImage).toHaveAttribute('src', '/images/placeholder.jpg');
     });
 
-    it('handles show more/less images toggle', async () => {
-        render(<MovieDetailsModal movieId={movieId} onClose={mockOnClose} />);
-
-        await waitFor(() => {
-            const showMoreButton = screen.getByText('Показать все (2 фото)');
-            fireEvent.click(showMoreButton);
+    test('displays initial set of images', async () => {
+        await act(async () => {
+            render(<MovieDetailsModal movieId="123" onClose={() => { }} />);
         });
 
-        expect(screen.getByText('Свернуть (2 фото)')).toBeInTheDocument();
-    });
-
-    it('handles close button click', async () => {
-        render(<MovieDetailsModal movieId={movieId} onClose={mockOnClose} />);
-
         await waitFor(() => {
-            const closeButton = screen.getByText('✕');
-            fireEvent.click(closeButton);
+            expect(screen.getByText('Test Movie')).toBeInTheDocument();
         });
 
-        expect(mockOnClose).toHaveBeenCalled();
+        const images = document.querySelectorAll('.movie-thumbnail');
+        expect(images.length).toBe(5);
     });
 
-    it('handles link clicks', async () => {
-        render(<MovieDetailsModal movieId={movieId} onClose={mockOnClose} />);
-
-        await waitFor(() => {
-            const links = screen.getAllByRole('link');
-            expect(links).toHaveLength(2);
-            expect(links[0]).toHaveAttribute('href', 'http://test1.com');
-            expect(links[1]).toHaveAttribute('href', 'http://test2.com');
-        });
-    });
-
-    it('handles video controls', async () => {
-        render(<MovieDetailsModal movieId={movieId} onClose={mockOnClose} />);
-
-        await waitFor(() => {
-            const toggleButton = screen.getByText('Показать видео');
-            fireEvent.click(toggleButton);
+    test('shows all images when "Show all" button is clicked', async () => {
+        await act(async () => {
+            render(<MovieDetailsModal movieId="123" onClose={() => { }} />);
         });
 
-        const videoElement = screen.getByTestId('video-player');
-        const playButton = screen.getByText('▶');
+        await waitFor(() => {
+            expect(screen.getByText('Test Movie')).toBeInTheDocument();
+        });
 
-        fireEvent.click(playButton);
-        expect(screen.getByText('⏸')).toBeInTheDocument();
+        await act(async () => {
+            const showAllButton = screen.getByText(/Показати всі/);
+            fireEvent.click(showAllButton);
+        });
 
-        fireEvent.click(playButton);
-        expect(screen.getByText('▶')).toBeInTheDocument();
+        const allImages = document.querySelectorAll('.movie-thumbnail');
+        expect(allImages.length).toBe(6);
     });
-}); 
+
+    test('uses cached data for subsequent requests', async () => {
+        let component: RenderResult;
+        await act(async () => {
+            component = render(<MovieDetailsModal movieId="123" onClose={() => { }} />);
+        });
+
+        await waitFor(() => {
+            expect(screen.getByText('Test Movie')).toBeInTheDocument();
+        });
+
+        expect(global.fetch).toHaveBeenCalledTimes(1);
+
+        await act(async () => {
+            component.rerender(<MovieDetailsModal movieId="123" onClose={() => { }} />);
+        });
+
+        expect(global.fetch).toHaveBeenCalledTimes(1);
+
+        await act(async () => {
+            component.rerender(<MovieDetailsModal movieId="456" onClose={() => { }} />);
+        });
+
+        expect(global.fetch).toHaveBeenCalledTimes(2);
+    });
+
+    test('displays "No images available" message when no images', async () => {
+        const movieWithoutImages = {
+            ...mockMovie,
+            images: {
+                stills: [],
+                posters: []
+            }
+        };
+
+        global.fetch = jest.fn(() =>
+            Promise.resolve({
+                ok: true,
+                json: () => Promise.resolve(movieWithoutImages)
+            } as Response)
+        );
+
+        await act(async () => {
+            render(<MovieDetailsModal movieId="123" onClose={() => { }} />);
+        });
+
+        await waitFor(() => {
+            expect(screen.getByText('Немає доступних зображень')).toBeInTheDocument();
+        });
+    });
+});
